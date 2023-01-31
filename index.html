@@ -1,1 +1,65 @@
-Hello World
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko" lang="ko">
+<head>
+<title>Cross-Browser QRCode generator for Javascript</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
+<script type="text/javascript" src="jquery.min.js"></script>
+<script type="text/javascript" src="qrcode.js"></script>
+</head>
+<body>
+<button id="get_gps" type="button" onclick="getLocation()">Get GPS</button>
+<p id="gps_p"></p>
+
+<input id="code_text" type="text" value="deepmirror" style="width:80%" /><br />
+<button id="make_code" type="button" onclick="makeCode()">Make Qrcode</button>
+<div id="qrcode" style="width:90%; margin-top:15px;"></div>
+
+<script type="text/javascript">
+
+// for making qr code
+var qrcode = new QRCode(document.getElementById("qrcode"), {
+	width : 500,
+	height : 500
+});
+
+function makeCode () {
+	var elText = document.getElementById("code_text");
+
+	if (!elText.value) {
+		alert("Input a text");
+		elText.focus();
+		return;
+	}
+
+	qrcode.makeCode(elText.value);
+}
+
+// $("#text").
+// 	on("blur", function () {
+// 		makeCode();
+// 	}).
+// 	on("keydown", function (e) {
+// 		if (e.keyCode == 13) {
+// 			makeCode();
+// 		}
+// 	});
+
+// for getting gps location
+var gps_p = document.getElementById("gps_p");
+
+function showPosition(position) {
+  gps_p.innerHTML = "Latitude: " + position.coords.latitude +
+  "<br>Longitude: " + position.coords.longitude;
+}
+
+function getLocation() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(showPosition);
+  } else {
+    gps_p.innerHTML = "Geolocation is not supported by this browser.";
+  }
+}
+
+</script>
+</body>
