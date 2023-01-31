@@ -53,7 +53,7 @@ function showPosition(position) {
 
   // https://github.com/deepmirrorinc/CoreApis/blob/master/proto/api/vision/marker.proto
   encoded_string =
-      "id: " + Date.now() + "\n" +
+      "id: \"" + Date.now() + "\"\n" +
       "gps {\n" +
       "  x: " + position.coords.longitude + "\n" +
       "  y: " + position.coords.latitude + "\n" +
