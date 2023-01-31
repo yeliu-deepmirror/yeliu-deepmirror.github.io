@@ -1,26 +1,34 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko" lang="ko">
 <head>
-<title>Cross-Browser QRCode generator for Javascript</title>
+<title>DeepMirror GPS QRCode generator</title>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" />
 <script type="text/javascript" src="jquery.min.js"></script>
 <script type="text/javascript" src="qrcode.js"></script>
 </head>
 <body>
-<button id="get_gps" type="button" onclick="getLocation()">Get GPS</button>
-<p id="gps_p"></p>
 
-<input id="code_text" type="text" value="deepmirror" style="width:80%" /><br />
-<button id="make_code" type="button" onclick="makeCode()">Make Qrcode</button>
+<p>
+  Make Qrcode with the latest GPS data.
+</p>
+
+<button id="get_gps" type="button" onclick="getLocation()">Get GPS & Make Qrcode</button>
+<p><u>GPS: </u></p>
+<p id="gps_p">none</p>
+
+<p><u>Encoded String: </u></p>
+<p id="code_text" type="text" style="width:80%; white-space:pre-wrap;">none</p>
+
+<p><u>Qrcode: </u></p>
 <div id="qrcode" style="width:90%; margin-top:15px;"></div>
 
 <script type="text/javascript">
 
 // for making qr code
 var qrcode = new QRCode(document.getElementById("qrcode"), {
-	width : 500,
-	height : 500
+	width : 0.9 * $(window).width(),
+	height : 0.9 * $(window).width()
 });
 
 function makeCode () {
@@ -32,18 +40,9 @@ function makeCode () {
 		return;
 	}
 
+  qrcode.clear(); // clear the code.
 	qrcode.makeCode(elText.value);
 }
-
-// $("#text").
-// 	on("blur", function () {
-// 		makeCode();
-// 	}).
-// 	on("keydown", function (e) {
-// 		if (e.keyCode == 13) {
-// 			makeCode();
-// 		}
-// 	});
 
 // for getting gps location
 var gps_p = document.getElementById("gps_p");
@@ -51,6 +50,20 @@ var gps_p = document.getElementById("gps_p");
 function showPosition(position) {
   gps_p.innerHTML = "Latitude: " + position.coords.latitude +
   "<br>Longitude: " + position.coords.longitude;
+
+  // https://github.com/deepmirrorinc/CoreApis/blob/master/proto/api/vision/marker.proto
+  encoded_string =
+      "id: " + Date.now() + "\n" +
+      "gps {\n" +
+      "  x: " + position.coords.longitude + "\n" +
+      "  y: " + position.coords.latitude + "\n" +
+      "}";
+
+  var elText = document.getElementById("code_text");
+  elText.innerHTML = encoded_string;
+
+  qrcode.clear(); // clear the code.
+  qrcode.makeCode(encoded_string);
 }
 
 function getLocation() {
