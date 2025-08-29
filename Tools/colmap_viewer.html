@@ -12,15 +12,25 @@
     <h2 style="color: white;">Choose Colmap Sparse Model</h2>
     <input style="color: white;" type="file" webkitdirectory directory multiple id="folderInput">
     <pre id="output" style="color: white;"></pre>
-    <label style="color: white;" >点大小: <input type="range" id="pointSize" min="0.01" max="2" step="0.01" value="0.05"></label>
+    <label style="color: white;">点大小: <input type="range" id="pointSize" min="0.01" max="2" step="0.01" value="0.05"></label>
     <label style="color: white;">相机大小: <input type="range" id="cameraSize" min="0.1" max="5" step="0.1" value="0.5"></label>
+    <label style="color: white;">显示图片名称: <input type="checkbox" id="showLabels" checked></label>
+    <label style="color: white;">文件夹过滤: 
+        <select id="folderFilter" style="color: black;">
+            <option value="">显示所有</option>
+        </select>
+    </label>
 
     <script>
-        let scene, camera, renderer, controls, pointCloud, camerasGroup;
+        let scene, camera, renderer, controls, pointCloud, camerasGroup, labelsGroup;
         let constantOffsetX = -0.5 * Math.PI;
+        let imagesData = [];
+        let availableFolders = [];
 
         document.getElementById("pointSize").addEventListener("input", handlePointSize);
         document.getElementById("cameraSize").addEventListener("input", handleCameraSize);
+        document.getElementById("showLabels").addEventListener("change", handleShowLabels);
+        document.getElementById("folderFilter").addEventListener("change", handleFolderFilter);
 
         function handlePointSize(event) {
             if (pointCloud == null) return;
@@ -29,29 +39,159 @@
 
         function handleCameraSize(event) {
             if (camerasGroup == null) return;
+            recreateCameraGroup();
+        }
 
-            let newCamerasGroup = new THREE.Group();
-            camerasGroup.traverse((child) => {
-                const newAxesHelper = new THREE.AxesHelper(event.target.value);
-                newAxesHelper.position.copy(child.position);
-                newAxesHelper.rotation.copy(child.rotation);
-                // 将新的 AxesHelper 添加到组中
-                newCamerasGroup.add(newAxesHelper);
+        function handleShowLabels(event) {
+            if (labelsGroup == null) return;
+            labelsGroup.visible = event.target.checked;
+        }
+
+        function handleFolderFilter(event) {
+            if (imagesData.length === 0) return;
+            recreateCameraGroup();
+            recreateLabels();
+        }
+
+        function extractFolderFromPath(imageName) {
+            // 从路径中提取文件夹名，如 "GS010101_x/xxxxx.jpg" -> "GS010101_x"
+            const parts = imageName.split('/');
+            if (parts.length > 1) {
+                return parts[0];
+            }
+            return '';
+        }
+
+        function updateFolderFilter(images) {
+            const folders = new Set();
+            images.forEach(img => {
+                const folder = extractFolderFromPath(img.imageName);
+                if (folder) {
+                    folders.add(folder);
+                }
+            });
+            
+            availableFolders = Array.from(folders).sort();
+            const filterSelect = document.getElementById('folderFilter');
+            
+            // 清除现有选项（除了"显示所有"）
+            filterSelect.innerHTML = '<option value="">显示所有</option>';
+            
+            // 添加新的文件夹选项
+            availableFolders.forEach(folder => {
+                const option = document.createElement('option');
+                option.value = folder;
+                option.textContent = folder;
+                filterSelect.appendChild(option);
+            });
+        }
+
+        function shouldShowImage(imageName) {
+            const selectedFolder = document.getElementById('folderFilter').value;
+            if (!selectedFolder) return true; // 显示所有
+            
+            const imageFolder = extractFolderFromPath(imageName);
+            return imageFolder === selectedFolder;
+        }
+
+        function createTextSprite(text, color = '#ffffff', size = 16) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            
+            // 设置字体
+            context.font = `${size}px Arial`;
+            context.fillStyle = color;
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            
+            // 测量文本尺寸
+            const metrics = context.measureText(text);
+            const textWidth = metrics.width;
+            const textHeight = size;
+            
+            // 设置画布尺寸
+            canvas.width = textWidth + 20;
+            canvas.height = textHeight + 10;
+            
+            // 重新设置字体（画布大小改变后需要重设）
+            context.font = `${size}px Arial`;
+            context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            
+            context.fillStyle = color;
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(text, canvas.width / 2, canvas.height / 2);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            
+            // 调整精灵大小
+            const scale = 0.5;
+            sprite.scale.set(canvas.width * 0.01 * scale, canvas.height * 0.01 * scale, 1);
+            
+            return sprite;
+        }
+
+        function recreateCameraGroup() {
+            if (camerasGroup) {
+                scene.remove(camerasGroup);
+            }
+
+            const cameraSize = parseFloat(document.getElementById('cameraSize').value);
+            camerasGroup = new THREE.Group();
+
+            imagesData.forEach(img => {
+                if (!shouldShowImage(img.imageName)) return;
+
+                const camMesh = new THREE.AxesHelper(cameraSize);
+                camMesh.position.set(...img.position);
+                camMesh.setRotationFromMatrix(img.rotationMatrix);
+                camerasGroup.add(camMesh);
             });
 
-            scene.remove(camerasGroup);
-            camerasGroup = newCamerasGroup;
-            camerasGroup.rotation.x = constantOffsetX; // 180度 = π 弧度
+            camerasGroup.rotation.x = constantOffsetX;
             scene.add(camerasGroup);
         }
 
+        function recreateLabels() {
+            if (labelsGroup) {
+                scene.remove(labelsGroup);
+            }
+
+            const showLabels = document.getElementById('showLabels').checked;
+            if (!showLabels) return;
+
+            labelsGroup = new THREE.Group();
+
+            imagesData.forEach(img => {
+                if (!shouldShowImage(img.imageName)) return;
+
+                // 提取文件名（不包括路径）
+                const fileName = img.imageName.split('/').pop();
+                // 移除扩展名
+                const nameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
+                
+                const textSprite = createTextSprite(nameWithoutExt);
+                textSprite.position.set(
+                    img.position[0],
+                    img.position[1] + 0.3, // 稍微偏移到相机上方
+                    img.position[2]
+                );
+                labelsGroup.add(textSprite);
+            });
+
+            labelsGroup.rotation.x = constantOffsetX;
+            scene.add(labelsGroup);
+        }
 
         function initThreeJS() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             renderer = new THREE.WebGLRenderer();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setClearColor(0x000000); // 设置为黑色，也可以使用十六进制颜色值
+            renderer.setClearColor(0x000000);
             document.getElementById('viewer').appendChild(renderer.domElement);
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             camera.position.set(0, 0, 5);
@@ -79,6 +219,7 @@
               stats.images = await parseImages(fileMap['images.txt']);
             } else {
               document.getElementById('output').textContent = '错误：缺少必要的Colmap稀疏重建文件';
+              return;
             }
 
             if (fileMap['points3D.bin']) {
@@ -87,7 +228,11 @@
               stats.points3D = await parsePoints3D(fileMap['points3D.txt']);
             } else {
               document.getElementById('output').textContent = '错误：缺少必要的Colmap稀疏重建文件';
+              return;
             }
+
+            imagesData = stats.images;
+            updateFolderFilter(imagesData);
 
             document.getElementById('output').textContent = `\n相机数量: ${stats.images.length}\n点云点数: ${stats.points3D.points.length}`;
 
@@ -125,13 +270,12 @@
                         let str = "";
                         while (offset < buffer.byteLength) {
                             let char = view.getUint8(offset++);
-                            if (char === 0) break; // 读取到 null 终止符
+                            if (char === 0) break;
                             str += String.fromCharCode(char);
                         }
                         return str;
                     }
 
-                    // 读取注册的图像数量
                     const numImages = readUint64();
                     let poses = [];
 
@@ -140,25 +284,23 @@
                         let qvec = [readFloat64(), readFloat64(), readFloat64(), readFloat64()];
                         let tvec = [readFloat64(), readFloat64(), readFloat64()];
                         const cameraId = readInt32();
-                        const imageName = readString(); // 读取文件名
+                        const imageName = readString();
 
-                        // 读取 num_points2D
                         const numPoints2D = readUint64();
-                        offset += numPoints2D * (8 + 8 + 8); // 跳过 x, y, id 数据
+                        offset += numPoints2D * (8 + 8 + 8);
 
-                        // 生成旋转矩阵
                         let quaternion = new THREE.Quaternion(qvec[1], qvec[2], qvec[3], qvec[0]);
                         let rotationMatrix = new THREE.Matrix4();
                         rotationMatrix.makeRotationFromQuaternion(quaternion);
 
-                        // 计算相机位置 (R^T * -T)
                         let translation = new THREE.Vector3(-tvec[0], -tvec[1], -tvec[2]);
                         let cameraPosition = translation.applyMatrix4(rotationMatrix.clone().transpose());
 
                         poses.push({
                             position: [cameraPosition.x, cameraPosition.y, cameraPosition.z],
                             quaternion: qvec,
-                            rotationMatrix
+                            rotationMatrix,
+                            imageName: imageName
                         });
                     }
 
@@ -184,6 +326,7 @@
                         let tx = parseFloat(data[5]);
                         let ty = parseFloat(data[6]);
                         let tz = parseFloat(data[7]);
+                        let imageName = data.slice(9).join(' '); // 图片名可能包含空格
 
                         let quaternion = new THREE.Quaternion(qx, qy, qz, qw);
                         let translation = new THREE.Vector3(tx, ty, tz);
@@ -193,7 +336,12 @@
                         rotationMatrix.transpose();
 
                         let cameraPosition = translation.applyMatrix4(rotationMatrix.clone());
-                        poses.push({ position: [-cameraPosition.x, -cameraPosition.y, -cameraPosition.z], quaternion: [qx, qy, qz, qw], rotationMatrix });
+                        poses.push({ 
+                            position: [-cameraPosition.x, -cameraPosition.y, -cameraPosition.z], 
+                            quaternion: [qx, qy, qz, qw], 
+                            rotationMatrix,
+                            imageName: imageName
+                        });
                     }
                     resolve(poses);
                 };
@@ -258,21 +406,20 @@
                         return value;
                     }
 
-                    // 读取 3D 点的数量
                     const numPoints = readUint64();
                     let points = [];
                     let colors = [];
 
                     for (let i = 0; i < numPoints; i++) {
-                        let point3DId = readUint64(); // 3D点 ID
+                        let point3DId = readUint64();
                         let x = readFloat64();
                         let y = readFloat64();
                         let z = readFloat64();
                         let r = readUint8() / 255;
                         let g = readUint8() / 255;
                         let b = readUint8() / 255;
-                        let error = readFloat64(); // 误差
-                        let trackLength = readUint64(); // 观测到该点的图像数
+                        let error = readFloat64();
+                        let trackLength = readUint64();
 
                         let imageIds = [];
                         let point2DIndices = [];
@@ -294,15 +441,17 @@
         }
 
         function visualizeScene(images, pointData) {
-            // clean the current scene
+            // 清理当前场景
             while(scene.children.length > 0){
                 scene.remove(scene.children[0]);
             }
+            
             // 添加坐标系
-            const axesHelper = new THREE.AxesHelper(100); // 参数为坐标轴的长度
+            const axesHelper = new THREE.AxesHelper(100);
             axesHelper.rotation.x = constantOffsetX;
             scene.add(axesHelper);
 
+            // 添加点云
             const geometry = new THREE.BufferGeometry();
             const vertices = new Float32Array(pointData.points.flat());
             const colors = new Float32Array(pointData.colors.flat());
@@ -310,19 +459,12 @@
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
             const material = new THREE.PointsMaterial({ vertexColors: true, size: parseFloat(document.getElementById('pointSize').value) });
             pointCloud = new THREE.Points(geometry, material);
-            pointCloud.rotation.x = constantOffsetX; // 180度 = π 弧度
+            pointCloud.rotation.x = constantOffsetX;
             scene.add(pointCloud);
 
-            camerasGroup = new THREE.Group();
-            images.forEach(img => {
-                const camMesh = new THREE.AxesHelper(parseFloat(document.getElementById('cameraSize').value));
-                camMesh.position.set(...img.position);
-                camMesh.setRotationFromMatrix(img.rotationMatrix);
-                camerasGroup.add(camMesh);
-            });
-            camerasGroup.rotation.x = constantOffsetX; // 180度 = π 弧度
-
-            scene.add(camerasGroup);
+            // 创建相机组和标签
+            recreateCameraGroup();
+            recreateLabels();
         }
 
         initThreeJS();
