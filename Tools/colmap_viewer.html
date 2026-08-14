@@ -1,201 +1,435 @@
+---
+layout: null
+permalink: /Tools/colmap/colmap_viewer.html
+---
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Colmap Viewer</title>
+    <title>COLMAP Viewer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128/examples/js/controls/TrackballControls.js"></script>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            overflow: hidden;
+            background: #080b11;
+            color: #edf2f7;
+        }
+
+        #viewer {
+            position: fixed;
+            inset: 0;
+        }
+
+        #viewer canvas { display: block; }
+
+        .control-panel {
+            position: fixed;
+            z-index: 1;
+            top: 24px;
+            left: 24px;
+            width: min(360px, calc(100vw - 48px));
+            padding: 20px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.88);
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(16px);
+        }
+
+        .panel-toggle {
+            display: inline-grid;
+            width: 24px;
+            height: 24px;
+            place-items: center;
+            padding: 0;
+            border: 0;
+            border-radius: 5px;
+            background: transparent;
+            color: #edf2f7;
+            cursor: pointer;
+            font: 700 20px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+        }
+
+        .panel-toggle:hover { background: rgba(148, 163, 184, 0.18); }
+        .panel-toggle[aria-expanded="false"] { transform: rotate(-90deg); }
+
+        .panel-heading {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 20px;
+            letter-spacing: -0.02em;
+        }
+
+        .description, .drop-instructions {
+            margin: 8px 0 0;
+            color: #aab7c8;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .file-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .file-picker, .secondary-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 38px;
+            padding: 0 14px;
+            border: 1px solid #4f8cff;
+            border-radius: 8px;
+            background: #2768dd;
+            color: white;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .secondary-button {
+            border-color: rgba(148, 163, 184, 0.52);
+            background: rgba(30, 41, 59, 0.92);
+        }
+
+        .file-picker:hover, .secondary-button:hover { background: #3578ee; }
+
+        .server-loader {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .server-loader input {
+            min-width: 0;
+            height: 38px;
+            padding: 0 11px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 8px;
+            background: rgba(2, 6, 23, 0.72);
+            color: #edf2f7;
+            font: inherit;
+        }
+
+        .server-loader input::placeholder { color: #64748b; }
+
+        @media (max-width: 540px) {
+            .server-loader { grid-template-columns: 1fr; }
+        }
+
+        .remote-browser-dialog {
+            width: min(620px, calc(100vw - 32px));
+            max-height: min(720px, calc(100vh - 32px));
+            padding: 0;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 14px;
+            background: #0f172a;
+            color: #edf2f7;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+        }
+
+        .remote-browser-dialog::backdrop { background: rgba(2, 6, 23, 0.72); }
+
+        .asset-browser-header, .asset-browser-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 16px 18px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .asset-browser-footer {
+            border-top: 1px solid rgba(148, 163, 184, 0.2);
+            border-bottom: 0;
+        }
+
+        .asset-browser-header h2 { margin: 0; font-size: 17px; }
+
+        .dialog-button, .asset-entry {
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: 7px;
+            background: rgba(30, 41, 59, 0.9);
+            color: inherit;
+            cursor: pointer;
+            font: inherit;
+        }
+
+        .dialog-button { padding: 7px 11px; }
+        .dialog-button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+        .asset-browser-path {
+            margin: 0;
+            padding: 12px 18px;
+            color: #93c5fd;
+            font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+            overflow-wrap: anywhere;
+        }
+
+        .asset-browser-list {
+            display: grid;
+            gap: 7px;
+            min-height: 180px;
+            max-height: 50vh;
+            margin: 0;
+            padding: 0 18px 18px;
+            overflow-y: auto;
+            list-style: none;
+        }
+
+        .asset-entry {
+            width: 100%;
+            padding: 9px 11px;
+            text-align: left;
+        }
+
+        .asset-entry:hover { background: #1e3a5f; }
+        .asset-file { color: #94a3b8; cursor: default; }
+
+        #folderInput {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+
+        #output {
+            min-height: 44px;
+            margin: 16px 0 0;
+            padding: 10px 12px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 8px;
+            background: rgba(2, 6, 23, 0.55);
+            color: #cbd5e1;
+            font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+            white-space: pre-wrap;
+        }
+
+        .settings {
+            display: grid;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .setting {
+            display: grid;
+            grid-template-columns: 92px 1fr;
+            align-items: center;
+            gap: 12px;
+            color: #dce6f2;
+            font-size: 13px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: #4f8cff;
+        }
+
+        .drop-target {
+            position: fixed;
+            z-index: 2;
+            inset: 16px;
+            display: grid;
+            place-items: center;
+            border: 2px dashed #76a7ff;
+            border-radius: 16px;
+            background: rgba(15, 43, 91, 0.54);
+            color: #eff6ff;
+            font-size: clamp(18px, 3vw, 30px);
+            font-weight: 700;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 120ms ease;
+        }
+
+        body.is-dragging .drop-target { opacity: 1; }
+
+        @media (max-width: 540px) {
+            .control-panel { top: 12px; left: 12px; width: calc(100vw - 24px); }
+            .drop-target { inset: 8px; }
+        }
+    </style>
 </head>
 <body>
-    <div id="viewer" style="width: 100vw; height: 0vh;"></div>
-    <h2 style="color: white;">Choose Colmap Sparse Model</h2>
-    <input style="color: white;" type="file" webkitdirectory directory multiple id="folderInput">
-    <pre id="output" style="color: white;"></pre>
-    <label style="color: white;">点大小: <input type="range" id="pointSize" min="0.01" max="2" step="0.01" value="0.05"></label>
-    <label style="color: white;">相机大小: <input type="range" id="cameraSize" min="0.1" max="5" step="0.1" value="0.5"></label>
-    <label style="color: white;">显示图片名称: <input type="checkbox" id="showLabels" checked></label>
-    <label style="color: white;">文件夹过滤: 
-        <select id="folderFilter" style="color: black;">
-            <option value="">显示所有</option>
-        </select>
-    </label>
+    <div id="viewer"></div>
+    <main class="control-panel" id="controlPanel">
+        <div class="panel-heading">
+            <h1>COLMAP Viewer</h1>
+            <button class="panel-toggle" id="panelToggle" type="button" aria-controls="panelContent" aria-expanded="true" aria-label="Collapse control panel">⌄</button>
+        </div>
+        <div id="panelContent">
+            <p class="description">Inspect a text or binary sparse reconstruction with free camera rotation.</p>
+            <div class="file-actions">
+                <label class="file-picker" for="folderInput">Choose local model folder</label>
+            </div>
+            <input type="file" webkitdirectory directory multiple id="folderInput" aria-describedby="dropInstructions">
+            <p class="drop-instructions" id="dropInstructions">Or drag a local folder anywhere onto this page.</p>
+            <div class="server-loader">
+                <input id="remoteServerUrl" type="url" inputmode="url" autocomplete="url" placeholder="http://192.168.10.39:8000" aria-label="COLMAP folder server URL">
+                <button class="secondary-button" id="browseRemoteButton" type="button">Browse remote server</button>
+            </div>
+            <p class="drop-instructions">Connect to <code>colmap_folder_server.py</code>, browse its exposed root, then load a folder containing <code>images.bin</code> + <code>points3D.bin</code> (or the matching <code>.txt</code> pair).</p>
+            <pre id="output" aria-live="polite">No model loaded.</pre>
+            <div class="settings">
+                <label class="setting">Point size <input type="range" id="pointSize" min="0" max="1" step="0.001" data-minimum="0.01" data-maximum="2" data-default="0.05"></label>
+                <label class="setting">Camera size <input type="range" id="cameraSize" min="0" max="1" step="0.001" data-minimum="0.1" data-maximum="5" data-default="0.5"></label>
+            </div>
+        </div>
+    </main>
+    <div class="drop-target" aria-hidden="true">Drop model folder to load</div>
+    <dialog class="remote-browser-dialog" id="remoteBrowserDialog">
+        <div class="asset-browser-header">
+            <h2>Remote folders</h2>
+            <button class="dialog-button" id="closeRemoteBrowserButton" type="button">Close</button>
+        </div>
+        <p class="asset-browser-path" id="remoteBrowserPath">/</p>
+        <ul class="asset-browser-list" id="remoteBrowserList"></ul>
+        <div class="asset-browser-footer">
+            <button class="dialog-button" id="parentRemoteButton" type="button">Up one folder</button>
+            <button class="dialog-button" id="loadRemoteFolderButton" type="button" disabled>Load this COLMAP folder</button>
+        </div>
+    </dialog>
 
     <script>
-        let scene, camera, renderer, controls, pointCloud, camerasGroup, labelsGroup;
+        let scene, camera, renderer, controls, pointCloud, camerasGroup;
         let constantOffsetX = -0.5 * Math.PI;
-        let imagesData = [];
-        let availableFolders = [];
+        let dragDepth = 0;
+        let currentRemotePath = '';
+        let currentRemoteListing = null;
+        let remoteServerBase = '';
+        const cameraAxisDirections = [
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3(0, 0, 1)
+        ];
+        const cameraAxisMaterials = [
+            new THREE.MeshBasicMaterial({ color: 0xff4d4d }),
+            new THREE.MeshBasicMaterial({ color: 0x50d890 }),
+            new THREE.MeshBasicMaterial({ color: 0x4f8cff })
+        ];
 
-        document.getElementById("pointSize").addEventListener("input", handlePointSize);
-        document.getElementById("cameraSize").addEventListener("input", handleCameraSize);
-        document.getElementById("showLabels").addEventListener("change", handleShowLabels);
-        document.getElementById("folderFilter").addEventListener("change", handleFolderFilter);
+        const pointSizeInput = document.getElementById('pointSize');
+        const cameraSizeInput = document.getElementById('cameraSize');
+        const panelContent = document.getElementById('panelContent');
+        const panelToggle = document.getElementById('panelToggle');
+        initializeLogarithmicSlider(pointSizeInput);
+        initializeLogarithmicSlider(cameraSizeInput);
+        pointSizeInput.addEventListener('input', handlePointSize);
+        cameraSizeInput.addEventListener('input', handleCameraSize);
+        panelToggle.addEventListener('click', toggleControlPanel);
+
+        function toggleControlPanel() {
+            const isExpanded = panelToggle.getAttribute('aria-expanded') === 'true';
+            panelContent.hidden = isExpanded;
+            panelToggle.setAttribute('aria-expanded', String(!isExpanded));
+            panelToggle.setAttribute('aria-label', isExpanded ? 'Expand control panel' : 'Collapse control panel');
+        }
+
+        function initializeLogarithmicSlider(input) {
+            const minimum = Number(input.dataset.minimum);
+            const maximum = Number(input.dataset.maximum);
+            const defaultValue = Number(input.dataset.default);
+            input.value = Math.log(defaultValue / minimum) / Math.log(maximum / minimum);
+            updateSliderValueText(input, defaultValue);
+        }
+
+        function logarithmicSliderValue(input) {
+            const minimum = Number(input.dataset.minimum);
+            const maximum = Number(input.dataset.maximum);
+            return minimum * (maximum / minimum) ** Number(input.value);
+        }
+
+        function updateSliderValueText(input, value) {
+            input.setAttribute('aria-valuetext', value.toPrecision(3));
+        }
 
         function handlePointSize(event) {
+            const size = logarithmicSliderValue(event.target);
+            updateSliderValueText(event.target, size);
             if (pointCloud == null) return;
-            pointCloud.material.size = event.target.value;
+            pointCloud.material.size = size;
         }
 
         function handleCameraSize(event) {
+            const size = logarithmicSliderValue(event.target);
+            updateSliderValueText(event.target, size);
             if (camerasGroup == null) return;
-            recreateCameraGroup();
-        }
 
-        function handleShowLabels(event) {
-            if (labelsGroup == null) return;
-            labelsGroup.visible = event.target.checked;
-        }
-
-        function handleFolderFilter(event) {
-            if (imagesData.length === 0) return;
-            recreateCameraGroup();
-            recreateLabels();
-        }
-
-        function extractFolderFromPath(imageName) {
-            // 从路径中提取文件夹名，如 "GS010101_x/xxxxx.jpg" -> "GS010101_x"
-            const parts = imageName.split('/');
-            if (parts.length > 1) {
-                return parts[0];
-            }
-            return '';
-        }
-
-        function updateFolderFilter(images) {
-            const folders = new Set();
-            images.forEach(img => {
-                const folder = extractFolderFromPath(img.imageName);
-                if (folder) {
-                    folders.add(folder);
-                }
-            });
-            
-            availableFolders = Array.from(folders).sort();
-            const filterSelect = document.getElementById('folderFilter');
-            
-            // 清除现有选项（除了"显示所有"）
-            filterSelect.innerHTML = '<option value="">显示所有</option>';
-            
-            // 添加新的文件夹选项
-            availableFolders.forEach(folder => {
-                const option = document.createElement('option');
-                option.value = folder;
-                option.textContent = folder;
-                filterSelect.appendChild(option);
-            });
-        }
-
-        function shouldShowImage(imageName) {
-            const selectedFolder = document.getElementById('folderFilter').value;
-            if (!selectedFolder) return true; // 显示所有
-            
-            const imageFolder = extractFolderFromPath(imageName);
-            return imageFolder === selectedFolder;
-        }
-
-        function createTextSprite(text, color = '#ffffff', size = 16) {
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            
-            // 设置字体
-            context.font = `${size}px Arial`;
-            context.fillStyle = color;
-            context.textAlign = 'center';
-            context.textBaseline = 'middle';
-            
-            // 测量文本尺寸
-            const metrics = context.measureText(text);
-            const textWidth = metrics.width;
-            const textHeight = size;
-            
-            // 设置画布尺寸
-            canvas.width = textWidth + 20;
-            canvas.height = textHeight + 10;
-            
-            // 重新设置字体（画布大小改变后需要重设）
-            context.font = `${size}px Arial`;
-            context.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            context.fillRect(0, 0, canvas.width, canvas.height);
-            
-            context.fillStyle = color;
-            context.textAlign = 'center';
-            context.textBaseline = 'middle';
-            context.fillText(text, canvas.width / 2, canvas.height / 2);
-            
-            const texture = new THREE.CanvasTexture(canvas);
-            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-            const sprite = new THREE.Sprite(spriteMaterial);
-            
-            // 调整精灵大小
-            const scale = 0.5;
-            sprite.scale.set(canvas.width * 0.01 * scale, canvas.height * 0.01 * scale, 1);
-            
-            return sprite;
-        }
-
-        function recreateCameraGroup() {
-            if (camerasGroup) {
-                scene.remove(camerasGroup);
-            }
-
-            const cameraSize = parseFloat(document.getElementById('cameraSize').value);
-            camerasGroup = new THREE.Group();
-
-            imagesData.forEach(img => {
-                if (!shouldShowImage(img.imageName)) return;
-
-                const camMesh = new THREE.AxesHelper(cameraSize);
-                camMesh.position.set(...img.position);
-                camMesh.setRotationFromMatrix(img.rotationMatrix);
-                camerasGroup.add(camMesh);
+            const axisGeometry = createCameraAxisGeometry(size);
+            const newCamerasGroup = new THREE.Group();
+            camerasGroup.children.forEach((child) => {
+                const cameraAxes = createCameraAxes(size, axisGeometry);
+                cameraAxes.position.copy(child.position);
+                cameraAxes.quaternion.copy(child.quaternion);
+                newCamerasGroup.add(cameraAxes);
             });
 
+            const oldAxisGeometry = camerasGroup.children[0]?.children[0]?.geometry;
+            scene.remove(camerasGroup);
+            if (oldAxisGeometry) oldAxisGeometry.dispose();
+            camerasGroup = newCamerasGroup;
             camerasGroup.rotation.x = constantOffsetX;
             scene.add(camerasGroup);
         }
 
-        function recreateLabels() {
-            if (labelsGroup) {
-                scene.remove(labelsGroup);
-            }
-
-            const showLabels = document.getElementById('showLabels').checked;
-            if (!showLabels) return;
-
-            labelsGroup = new THREE.Group();
-
-            imagesData.forEach(img => {
-                if (!shouldShowImage(img.imageName)) return;
-
-                // 提取文件名（不包括路径）
-                const fileName = img.imageName.split('/').pop();
-                // 移除扩展名
-                const nameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
-                
-                const textSprite = createTextSprite(nameWithoutExt);
-                textSprite.position.set(
-                    img.position[0],
-                    img.position[1] + 0.3, // 稍微偏移到相机上方
-                    img.position[2]
-                );
-                labelsGroup.add(textSprite);
-            });
-
-            labelsGroup.rotation.x = constantOffsetX;
-            scene.add(labelsGroup);
+        function createCameraAxisGeometry(size) {
+            const radius = Math.max(size * 0.05, 0.004);
+            return new THREE.CylinderGeometry(radius, radius, size, 6);
         }
+
+        function createCameraAxes(size, axisGeometry) {
+            const cameraAxes = new THREE.Group();
+            cameraAxisDirections.forEach((direction, index) => {
+                const axis = new THREE.Mesh(axisGeometry, cameraAxisMaterials[index]);
+                axis.position.copy(direction).multiplyScalar(size / 2);
+                axis.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+                cameraAxes.add(axis);
+            });
+            return cameraAxes;
+        }
+
 
         function initThreeJS() {
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             renderer = new THREE.WebGLRenderer();
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setClearColor(0x000000);
             document.getElementById('viewer').appendChild(renderer.domElement);
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
             camera.position.set(0, 0, 5);
+            controls = new THREE.TrackballControls(camera, renderer.domElement);
+            window.addEventListener('resize', resizeRenderer);
             animate();
+        }
+
+        function resizeRenderer() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            controls.handleResize();
         }
 
         function animate() {
@@ -204,111 +438,351 @@
             renderer.render(scene, camera);
         }
 
-        document.getElementById('folderInput').addEventListener('change', async function(event) {
-            const files = event.target.files;
-            let fileMap = {};
-
-            for (let file of files) {
-                fileMap[file.name] = file;
-            }
-
-            let stats = {};
-            if (fileMap['images.bin']) {
-              stats.images = await parseColmapBin(fileMap['images.bin']);
-            } else if (fileMap['images.txt']) {
-              stats.images = await parseImages(fileMap['images.txt']);
-            } else {
-              document.getElementById('output').textContent = '错误：缺少必要的Colmap稀疏重建文件';
-              return;
-            }
-
-            if (fileMap['points3D.bin']) {
-              stats.points3D = await parsePoints3DBin(fileMap['points3D.bin']);
-            } else if (fileMap['points3D.txt']) {
-              stats.points3D = await parsePoints3D(fileMap['points3D.txt']);
-            } else {
-              document.getElementById('output').textContent = '错误：缺少必要的Colmap稀疏重建文件';
-              return;
-            }
-
-            imagesData = stats.images;
-            updateFolderFilter(imagesData);
-
-            document.getElementById('output').textContent = `\n相机数量: ${stats.images.length}\n点云点数: ${stats.points3D.points.length}`;
-
-            visualizeScene(stats.images, stats.points3D);
+        document.getElementById('folderInput').addEventListener('change', function(event) {
+            loadColmapFiles(Array.from(event.target.files));
         });
 
-        async function parseColmapBin(file) {
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = function (event) {
-                    const buffer = event.target.result;
-                    const view = new DataView(buffer);
-                    let offset = 0;
+        document.getElementById('browseRemoteButton').addEventListener('click', connectRemoteBrowser);
+        document.getElementById('remoteServerUrl').addEventListener('keydown', function(event) {
+            if (event.key === 'Enter') connectRemoteBrowser();
+        });
+        document.getElementById('closeRemoteBrowserButton').addEventListener('click', function() {
+            document.getElementById('remoteBrowserDialog').close();
+        });
+        document.getElementById('parentRemoteButton').addEventListener('click', function() {
+            if (!currentRemoteListing || currentRemoteListing.parent == null) return;
+            renderRemoteDirectory(currentRemoteListing.parent);
+        });
+        document.getElementById('loadRemoteFolderButton').addEventListener('click', loadCurrentRemoteFolder);
 
-                    function readUint64() {
-                        let low = view.getUint32(offset, true);
-                        let high = view.getUint32(offset + 4, true);
-                        offset += 8;
-                        return high * 2 ** 32 + low;
-                    }
+        function normalizeServerBase(rawUrl) {
+            const value = rawUrl.trim() || window.location.origin;
+            const parsed = new URL(value, window.location.href);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+                throw new Error('Only HTTP(S) server URLs are supported.');
+            }
+            parsed.hash = '';
+            parsed.search = '';
+            parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+            return parsed.href.replace(/\/+$/, '');
+        }
 
-                    function readInt32() {
-                        let value = view.getInt32(offset, true);
-                        offset += 4;
-                        return value;
-                    }
+        async function connectRemoteBrowser() {
+            const output = document.getElementById('output');
+            try {
+                remoteServerBase = normalizeServerBase(document.getElementById('remoteServerUrl').value);
+                document.getElementById('remoteServerUrl').value = remoteServerBase;
+                output.textContent = `Connecting to ${remoteServerBase}...`;
+                await renderRemoteDirectory('');
+                document.getElementById('remoteBrowserDialog').showModal();
+                output.textContent = `Connected to remote folder server: ${remoteServerBase}`;
+            } catch (error) {
+                console.error(error);
+                output.textContent = `Unable to browse remote server: ${error.message}`;
+            }
+        }
 
-                    function readFloat64() {
-                        let value = view.getFloat64(offset, true);
-                        offset += 8;
-                        return value;
-                    }
+        async function fetchRemoteListing(path) {
+            const url = new URL('/api/list', remoteServerBase + '/');
+            url.searchParams.set('path', path);
+            const response = await fetch(url.href, { mode: 'cors' });
+            if (!response.ok) {
+                let message = `HTTP ${response.status}`;
+                try {
+                    const body = await response.json();
+                    if (body.error) message += `: ${body.error}`;
+                } catch (_) {}
+                throw new Error(message);
+            }
+            return response.json();
+        }
 
-                    function readString() {
-                        let str = "";
-                        while (offset < buffer.byteLength) {
-                            let char = view.getUint8(offset++);
-                            if (char === 0) break;
-                            str += String.fromCharCode(char);
-                        }
-                        return str;
-                    }
+        async function renderRemoteDirectory(path) {
+            const list = document.getElementById('remoteBrowserList');
+            list.replaceChildren();
+            const loading = document.createElement('li');
+            loading.className = 'asset-file';
+            loading.textContent = 'Loading...';
+            list.appendChild(loading);
 
-                    const numImages = readUint64();
-                    let poses = [];
+            const listing = await fetchRemoteListing(path);
+            currentRemoteListing = listing;
+            currentRemotePath = listing.path || '';
+            document.getElementById('remoteBrowserPath').textContent = '/' + currentRemotePath;
+            document.getElementById('parentRemoteButton').disabled = listing.parent == null;
+            document.getElementById('loadRemoteFolderButton').disabled = listing.colmap_format == null;
 
-                    for (let i = 0; i < numImages; i++) {
-                        const imageId = readInt32();
-                        let qvec = [readFloat64(), readFloat64(), readFloat64(), readFloat64()];
-                        let tvec = [readFloat64(), readFloat64(), readFloat64()];
-                        const cameraId = readInt32();
-                        const imageName = readString();
+            list.replaceChildren();
+            for (const name of listing.directories || []) {
+                const item = document.createElement('li');
+                const button = createAssetEntry(`📁 ${name}`, 'asset-entry');
+                button.addEventListener('click', () => {
+                    const childPath = currentRemotePath ? `${currentRemotePath}/${name}` : name;
+                    renderRemoteDirectory(childPath).catch(showRemoteBrowserError);
+                });
+                item.appendChild(button);
+                list.appendChild(item);
+            }
 
-                        const numPoints2D = readUint64();
-                        offset += numPoints2D * (8 + 8 + 8);
+            for (const file of listing.files || []) {
+                const item = document.createElement('li');
+                const entry = document.createElement('div');
+                entry.className = 'asset-entry asset-file';
+                entry.textContent = `📄 ${file.name} (${formatByteSize(file.size)})`;
+                item.appendChild(entry);
+                list.appendChild(item);
+            }
 
-                        let quaternion = new THREE.Quaternion(qvec[1], qvec[2], qvec[3], qvec[0]);
-                        let rotationMatrix = new THREE.Matrix4();
-                        rotationMatrix.makeRotationFromQuaternion(quaternion);
+            if ((listing.directories || []).length === 0 && (listing.files || []).length === 0) {
+                const item = document.createElement('li');
+                item.className = 'asset-file';
+                item.textContent = 'This folder is empty.';
+                list.appendChild(item);
+            }
 
-                        let translation = new THREE.Vector3(-tvec[0], -tvec[1], -tvec[2]);
-                        let cameraPosition = translation.applyMatrix4(rotationMatrix.clone().transpose());
+            if (listing.colmap_format) {
+                const item = document.createElement('li');
+                item.className = 'asset-file';
+                item.textContent = `✓ COLMAP ${listing.colmap_format.toUpperCase()} model detected in this folder.`;
+                list.appendChild(item);
+            }
+        }
 
-                        poses.push({
-                            position: [cameraPosition.x, cameraPosition.y, cameraPosition.z],
-                            quaternion: qvec,
-                            rotationMatrix,
-                            imageName: imageName
-                        });
-                    }
+        function showRemoteBrowserError(error) {
+            console.error(error);
+            document.getElementById('output').textContent = `Unable to browse remote folder: ${error.message}`;
+        }
 
-                    resolve(poses);
-                };
+        function createAssetEntry(text, className) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = className;
+            button.textContent = text;
+            return button;
+        }
 
-                reader.readAsArrayBuffer(file);
-            });
+        function formatByteSize(bytes) {
+            if (!Number.isFinite(bytes) || bytes < 1024) return `${bytes || 0} B`;
+            const units = ['KB', 'MB', 'GB', 'TB'];
+            let value = bytes;
+            let unit = -1;
+            do {
+                value /= 1024;
+                unit += 1;
+            } while (value >= 1024 && unit < units.length - 1);
+            return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unit]}`;
+        }
+
+        async function loadCurrentRemoteFolder() {
+            if (!currentRemoteListing || !currentRemoteListing.colmap_format) return;
+            const output = document.getElementById('output');
+            const extension = currentRemoteListing.colmap_format;
+            const displayPath = '/' + currentRemotePath;
+            document.getElementById('remoteBrowserDialog').close();
+            output.textContent = `Loading remote COLMAP model from ${displayPath}...`;
+
+            try {
+                const names = [`images.${extension}`, `points3D.${extension}`];
+                const files = await Promise.all(names.map(name => fetchRemoteFile(currentRemotePath, name)));
+                await loadColmapFiles(files, `Remote: ${remoteServerBase}${displayPath}`);
+            } catch (error) {
+                console.error(error);
+                output.textContent = `Unable to load remote COLMAP model: ${error.message}`;
+            }
+        }
+
+        async function fetchRemoteFile(folderPath, name) {
+            const parts = folderPath ? folderPath.split('/').filter(Boolean) : [];
+            parts.push(name);
+            const encodedPath = parts.map(encodeURIComponent).join('/');
+            const url = `${remoteServerBase}/files/${encodedPath}`;
+            const response = await fetch(url, { mode: 'cors' });
+            if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
+            return new File([await response.blob()], name);
+        }
+
+        function isFileDrag(event) {
+            return event.dataTransfer && Array.from(event.dataTransfer.types).includes('Files');
+        }
+
+        document.addEventListener('dragenter', function(event) {
+            if (!isFileDrag(event)) return;
+            event.preventDefault();
+            dragDepth += 1;
+            document.body.classList.add('is-dragging');
+        });
+
+        document.addEventListener('dragleave', function(event) {
+            if (!isFileDrag(event)) return;
+            dragDepth = Math.max(0, dragDepth - 1);
+            if (dragDepth === 0) document.body.classList.remove('is-dragging');
+        });
+
+        document.addEventListener('dragover', function(event) {
+            if (!isFileDrag(event)) return;
+            event.preventDefault();
+        });
+
+        document.addEventListener('drop', async function(event) {
+            if (!isFileDrag(event)) return;
+            event.preventDefault();
+            dragDepth = 0;
+            document.body.classList.remove('is-dragging');
+            document.getElementById('output').textContent = 'Reading dropped folder…';
+            try {
+                const files = await readDroppedFiles(event.dataTransfer);
+                loadColmapFiles(files);
+            } catch (error) {
+                console.error(error);
+                document.getElementById('output').textContent = 'Unable to read dropped folder.';
+            }
+        });
+
+        async function readDroppedFiles(dataTransfer) {
+            const entries = Array.from(dataTransfer.items || [])
+                .map(item => item.webkitGetAsEntry && item.webkitGetAsEntry())
+                .filter(Boolean);
+
+            if (entries.length === 0) {
+                return Array.from(dataTransfer.files);
+            }
+
+            const files = await Promise.all(entries.map(readEntryFiles));
+            return files.flat();
+        }
+
+        async function readEntryFiles(entry) {
+            if (entry.isFile) {
+                return new Promise((resolve, reject) => entry.file(file => resolve([file]), reject));
+            }
+
+            const reader = entry.createReader();
+            const entries = [];
+            let batch;
+            do {
+                batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+                entries.push(...batch);
+            } while (batch.length > 0);
+
+            const files = await Promise.all(entries.map(readEntryFiles));
+            return files.flat();
+        }
+
+        async function loadColmapFiles(files, source = null, statusSuffix = '') {
+            const fileMap = new Map();
+            for (const file of files) {
+                if (!fileMap.has(file.name)) fileMap.set(file.name, file);
+            }
+
+            const hasBinaryModel = fileMap.has('images.bin') && fileMap.has('points3D.bin');
+            const hasTextModel = fileMap.has('images.txt') && fileMap.has('points3D.txt');
+            if (!hasBinaryModel && !hasTextModel) {
+                document.getElementById('output').textContent = 'Missing a matching images/points3D .bin or .txt pair.';
+                return;
+            }
+            const imagesFile = fileMap.get(hasBinaryModel ? 'images.bin' : 'images.txt');
+            const pointsFile = fileMap.get(hasBinaryModel ? 'points3D.bin' : 'points3D.txt');
+
+            try {
+                const [images, points3D] = await Promise.all([
+                    hasBinaryModel ? parseImagesBinary(imagesFile) : parseImages(imagesFile),
+                    hasBinaryModel ? parsePoints3DBinary(pointsFile) : parsePoints3D(pointsFile)
+                ]);
+                const format = hasBinaryModel ? 'Binary' : 'Text';
+                const sourceText = source == null ? '' : `Source: ${source}\n`;
+                document.getElementById('output').textContent = `${sourceText}Format: ${format}\nCameras: ${images.length}\nPoints: ${points3D.points.length}${statusSuffix}`;
+                visualizeScene(images, points3D);
+            } catch (error) {
+                console.error(error);
+                document.getElementById('output').textContent = `Unable to read COLMAP sparse-model files: ${error.message}`;
+            }
+        }
+
+        class BinaryReader {
+            constructor(buffer) {
+                this.view = new DataView(buffer);
+                this.offset = 0;
+            }
+
+            ensureAvailable(byteCount) {
+                if (!Number.isSafeInteger(byteCount) || byteCount < 0 || this.offset + byteCount > this.view.byteLength) {
+                    throw new Error(`Invalid binary data at byte ${this.offset}`);
+                }
+            }
+
+            readUint8() {
+                this.ensureAvailable(1);
+                return this.view.getUint8(this.offset++);
+            }
+
+            readUint32() {
+                this.ensureAvailable(4);
+                const value = this.view.getUint32(this.offset, true);
+                this.offset += 4;
+                return value;
+            }
+
+            readUint64() {
+                this.ensureAvailable(8);
+                const low = this.view.getUint32(this.offset, true);
+                const high = this.view.getUint32(this.offset + 4, true);
+                this.offset += 8;
+                const value = high * 2 ** 32 + low;
+                if (!Number.isSafeInteger(value)) throw new Error('Binary integer exceeds JavaScript precision');
+                return value;
+            }
+
+            readFloat64() {
+                this.ensureAvailable(8);
+                const value = this.view.getFloat64(this.offset, true);
+                this.offset += 8;
+                return value;
+            }
+
+            readString() {
+                const start = this.offset;
+                while (this.offset < this.view.byteLength && this.view.getUint8(this.offset) !== 0) this.offset += 1;
+                if (this.offset === this.view.byteLength) throw new Error('Unterminated image name');
+                const bytes = new Uint8Array(this.view.buffer, this.view.byteOffset + start, this.offset - start);
+                this.offset += 1;
+                return new TextDecoder().decode(bytes);
+            }
+
+            skip(byteCount) {
+                this.ensureAvailable(byteCount);
+                this.offset += byteCount;
+            }
+        }
+
+        function createCameraPose(qvec, tvec) {
+            const quaternion = new THREE.Quaternion(qvec[1], qvec[2], qvec[3], qvec[0]);
+            const rotationMatrix = new THREE.Matrix4().makeRotationFromQuaternion(quaternion).transpose();
+            const cameraPosition = new THREE.Vector3(-tvec[0], -tvec[1], -tvec[2]).applyMatrix4(rotationMatrix);
+            return {
+                position: [cameraPosition.x, cameraPosition.y, cameraPosition.z],
+                rotationMatrix
+            };
+        }
+
+        async function parseImagesBinary(file) {
+            const reader = new BinaryReader(await file.arrayBuffer());
+            const imageCount = reader.readUint64();
+            if (imageCount > Math.floor((reader.view.byteLength - reader.offset) / 73)) {
+                throw new Error('Invalid binary image count');
+            }
+
+            const poses = [];
+            for (let index = 0; index < imageCount; index++) {
+                reader.readUint32();
+                const qvec = [reader.readFloat64(), reader.readFloat64(), reader.readFloat64(), reader.readFloat64()];
+                const tvec = [reader.readFloat64(), reader.readFloat64(), reader.readFloat64()];
+                reader.readUint32();
+                reader.readString();
+                const pointCount = reader.readUint64();
+                reader.skip(pointCount * 24);
+                poses.push(createCameraPose(qvec, tvec));
+            }
+            return poses;
         }
 
         async function parseImages(file) {
@@ -318,7 +792,7 @@
                     const lines = event.target.result.split('\n').filter(line => !line.startsWith('#') && line.trim() !== '');
                     let poses = [];
                     for (let i = 0; i < lines.length; i += 2) {
-                        const data = lines[i].split(' ');
+                        const data = lines[i].trim().split(/\s+/);
                         let qw = parseFloat(data[1]);
                         let qx = parseFloat(data[2]);
                         let qy = parseFloat(data[3]);
@@ -326,22 +800,8 @@
                         let tx = parseFloat(data[5]);
                         let ty = parseFloat(data[6]);
                         let tz = parseFloat(data[7]);
-                        let imageName = data.slice(9).join(' '); // 图片名可能包含空格
 
-                        let quaternion = new THREE.Quaternion(qx, qy, qz, qw);
-                        let translation = new THREE.Vector3(tx, ty, tz);
-
-                        let rotationMatrix = new THREE.Matrix4();
-                        rotationMatrix.makeRotationFromQuaternion(quaternion);
-                        rotationMatrix.transpose();
-
-                        let cameraPosition = translation.applyMatrix4(rotationMatrix.clone());
-                        poses.push({ 
-                            position: [-cameraPosition.x, -cameraPosition.y, -cameraPosition.z], 
-                            quaternion: [qx, qy, qz, qw], 
-                            rotationMatrix,
-                            imageName: imageName
-                        });
+                        poses.push(createCameraPose([qw, qx, qy, qz], [tx, ty, tz]));
                     }
                     resolve(poses);
                 };
@@ -357,7 +817,7 @@
                     let points = [];
                     let colors = [];
                     for (let line of lines) {
-                        const data = line.split(' ');
+                        const data = line.trim().split(/\s+/);
                         let x = parseFloat(data[1]);
                         let y = parseFloat(data[2]);
                         let z = parseFloat(data[3]);
@@ -373,100 +833,64 @@
             });
         }
 
-        async function parsePoints3DBin(file) {
-            return new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = function (event) {
-                    const buffer = event.target.result;
-                    const view = new DataView(buffer);
-                    let offset = 0;
+        async function parsePoints3DBinary(file) {
+            const reader = new BinaryReader(await file.arrayBuffer());
+            const pointCount = reader.readUint64();
+            if (pointCount > Math.floor((reader.view.byteLength - reader.offset) / 51)) {
+                throw new Error('Invalid binary point count');
+            }
 
-                    function readUint64() {
-                        let low = view.getUint32(offset, true);
-                        let high = view.getUint32(offset + 4, true);
-                        offset += 8;
-                        return high * 2 ** 32 + low;
-                    }
-
-                    function readFloat64() {
-                        let value = view.getFloat64(offset, true);
-                        offset += 8;
-                        return value;
-                    }
-
-                    function readUint8() {
-                        let value = view.getUint8(offset);
-                        offset += 1;
-                        return value;
-                    }
-
-                    function readInt32() {
-                        let value = view.getInt32(offset, true);
-                        offset += 4;
-                        return value;
-                    }
-
-                    const numPoints = readUint64();
-                    let points = [];
-                    let colors = [];
-
-                    for (let i = 0; i < numPoints; i++) {
-                        let point3DId = readUint64();
-                        let x = readFloat64();
-                        let y = readFloat64();
-                        let z = readFloat64();
-                        let r = readUint8() / 255;
-                        let g = readUint8() / 255;
-                        let b = readUint8() / 255;
-                        let error = readFloat64();
-                        let trackLength = readUint64();
-
-                        let imageIds = [];
-                        let point2DIndices = [];
-
-                        for (let j = 0; j < trackLength; j++) {
-                            imageIds.push(readInt32());
-                            point2DIndices.push(readInt32());
-                        }
-
-                        points.push([x, y, z]);
-                        colors.push([r, g, b]);
-                    }
-
-                    resolve({ points, colors });
-                };
-
-                reader.readAsArrayBuffer(file);
-            });
+            const points = [];
+            const colors = [];
+            for (let index = 0; index < pointCount; index++) {
+                reader.skip(8);
+                const point = [reader.readFloat64(), reader.readFloat64(), reader.readFloat64()];
+                const color = [reader.readUint8() / 255, reader.readUint8() / 255, reader.readUint8() / 255];
+                reader.readFloat64();
+                const trackLength = reader.readUint64();
+                reader.skip(trackLength * 8);
+                points.push(point);
+                colors.push(color);
+            }
+            return { points, colors };
         }
 
         function visualizeScene(images, pointData) {
-            // 清理当前场景
+            // Clear the current scene.
             while(scene.children.length > 0){
                 scene.remove(scene.children[0]);
             }
-            
-            // 添加坐标系
             const axesHelper = new THREE.AxesHelper(100);
             axesHelper.rotation.x = constantOffsetX;
             scene.add(axesHelper);
 
-            // 添加点云
             const geometry = new THREE.BufferGeometry();
             const vertices = new Float32Array(pointData.points.flat());
             const colors = new Float32Array(pointData.colors.flat());
             geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            const material = new THREE.PointsMaterial({ vertexColors: true, size: parseFloat(document.getElementById('pointSize').value) });
+            const material = new THREE.PointsMaterial({ vertexColors: true, size: logarithmicSliderValue(pointSizeInput) });
             pointCloud = new THREE.Points(geometry, material);
             pointCloud.rotation.x = constantOffsetX;
             scene.add(pointCloud);
 
-            // 创建相机组和标签
-            recreateCameraGroup();
-            recreateLabels();
+            camerasGroup = new THREE.Group();
+            const cameraSize = logarithmicSliderValue(cameraSizeInput);
+            const cameraAxisGeometry = createCameraAxisGeometry(cameraSize);
+            images.forEach(img => {
+                const camMesh = createCameraAxes(cameraSize, cameraAxisGeometry);
+                camMesh.position.set(...img.position);
+                camMesh.setRotationFromMatrix(img.rotationMatrix);
+                camerasGroup.add(camMesh);
+            });
+            camerasGroup.rotation.x = constantOffsetX;
+
+            scene.add(camerasGroup);
         }
 
+        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+            document.getElementById('remoteServerUrl').value = window.location.origin;
+        }
         initThreeJS();
     </script>
 </body>
