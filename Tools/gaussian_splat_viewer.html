@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Gaussian Splat Viewer</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; background: #060914; color: #edf2fb; }
+    #viewer { display: block; width: 100vw; height: 100vh; touch-action: none; }
+    #panel { position: fixed; z-index: 2; top: 20px; left: 20px; width: min(360px, calc(100vw - 40px)); padding: 18px; border: 1px solid #334155; border-radius: 14px; background: rgba(10, 16, 31, .9); box-shadow: 0 18px 50px #0008; backdrop-filter: blur(14px); max-height: calc(100vh - 40px); overflow-y: auto; }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    h1 { margin: 0; font-size: 19px; } p { margin: 7px 0 0; color: #a9b7cc; font-size: 13px; line-height: 1.45; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+    button, .file-label { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 12px; border: 1px solid #4f8cff; border-radius: 8px; background: #2768dd; color: #fff; cursor: pointer; font: 600 13px inherit; }
+    button.secondary { border-color: #526176; background: #182235; } button:hover, .file-label:hover { filter: brightness(1.13); }
+    .file-label.drop-active { border-color: #93c5fd; background: #1d4ed8; filter: brightness(1.25); }
+    .setting[hidden] { display: none; }
+    .setting { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 12px; margin-top: 14px; color: #dce6f2; font-size: 13px; }
+    .setting-row { display: flex; align-items: center; gap: 8px; }
+    .setting input[type=range] { width: 100%; accent-color: #4f8cff; }
+    #colmapStatus { font-size: 12px; }
+    .edit-block { margin-top: 16px; padding-top: 14px; border-top: 1px solid #27364d; }
+    .edit-title { display: flex; align-items: center; justify-content: space-between; color: #dce6f2; font-size: 13px; font-weight: 600; }
+    .edit-add { margin-top: 10px; }
+    select { flex: 1; min-width: 0; min-height: 32px; padding: 0 8px; border: 1px solid #526176; border-radius: 8px; background: #182235; color: #edf2fb; font: 13px inherit; }
+    #editShapeList { margin: 10px 0 0; padding: 0; list-style: none; }
+    #editShapeList:empty { display: none; }
+    #editShapeList li { display: flex; align-items: center; gap: 8px; padding: 3px 5px; border-radius: 6px; }
+    #editShapeList li.selected { background: #1d4ed855; }
+    .shape-name { flex: 1; justify-content: flex-start; min-height: 26px; padding: 0 6px; border: 0; background: none; color: #dce6f2; font: 500 12px inherit; }
+    .shape-remove { min-height: 24px; padding: 0 7px; border-color: #526176; background: #182235; font-size: 11px; }
+    .edit-modes { margin-top: 12px; }
+    .edit-modes button { flex: 1; min-height: 28px; font-size: 12px; }
+    .edit-modes button.active { border-color: #4f8cff; background: #2768dd; }
+    .edit-number { width: 100%; min-width: 0; min-height: 30px; padding: 0 6px; border: 1px solid #526176; border-radius: 6px; background: #182235; color: #edf2fb; font: 12px inherit; }
+    input[type=color] { width: 46px; height: 28px; padding: 0; border: 1px solid #526176; border-radius: 6px; background: #182235; }
+    input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    #lodStatus { margin-top: 8px; color: #8fa5c0; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #status { min-height: 42px; margin-top: 14px; padding: 9px 10px; border-radius: 8px; background: #03071299; color: #c4d2e7; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+    #panelToggle { min-height: 30px; padding: 0 9px; font-size: 14px; }
+    #panel.collapsed > :not(.panel-header) { display: none; }
+    #help { position: fixed; right: 18px; bottom: 15px; margin: 0; color: #a9b7cc; text-align: right; font-size: 12px; }
+    #fps { position: fixed; z-index: 2; left: 18px; bottom: 15px; margin: 0; padding: 3px 8px; border-radius: 6px; background: #03071299; color: #c4d2e7; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    @media (max-width: 540px) { #panel { top: 12px; left: 12px; width: calc(100vw - 24px); max-height: calc(100vh - 24px); } #help { display: none; } }
+  </style>
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+      "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/2.1.0/spark.module.js"
+    } }
+  </script>
+</head>
+<body>
+  <canvas id="viewer"></canvas>
+  <section id="panel">
+    <div class="panel-header">
+      <h1>Gaussian Splat Viewer</h1>
+      <button id="panelToggle" class="secondary" type="button" title="Hide panel" aria-label="Hide panel">✕</button>
+    </div>
+    <p>SparkJS renderer for local splats, with on-demand level of detail and SDF region edits.</p>
+    <div class="actions">
+      <label class="file-label" id="splatLabel" for="file" title="Click to choose a splat file, or drop one here">Open splat</label>
+      <input id="file" type="file" accept=".ply,.splat,.spz,.ksplat,.rad,application/octet-stream">
+      <label class="file-label" id="colmapFolderLabel" for="colmapFolder" title="Click to choose a sparse folder, or drop a folder or the images/points3D pair here">Open COLMAP folder</label>
+      <input id="colmapFolder" type="file" webkitdirectory directory multiple>
+    </div>
+    <label class="setting">Grid <span class="setting-row"><input type="range" id="gridSize" min="-1" max="2" step="0.05" value="0" aria-valuetext="10"><input type="checkbox" id="gridVisible" checked aria-label="Show grid"></span></label>
+    <label class="setting">Points <span class="setting-row"><input type="range" id="colmapPointSize" min="0" max="1" step="0.001" data-minimum="0.01" data-maximum="2" data-default="0.05"><input type="checkbox" id="colmapPointsVisible" checked aria-label="Show COLMAP points"></span></label>
+    <label class="setting">FOV <span class="setting-row"><input type="range" id="cameraFov" min="20" max="120" step="1" value="60"></span></label>
+    <label class="setting">Cameras <span class="setting-row"><input type="range" id="colmapCameraSize" min="0" max="1" step="0.001" data-minimum="0.1" data-maximum="5" data-default="0.5"><input type="checkbox" id="colmapCamerasVisible" checked aria-label="Show COLMAP cameras"></span></label>
+    <div class="edit-block">
+      <div class="edit-title">
+        <span>Splat edits</span>
+        <input type="checkbox" id="editEnabled" checked aria-label="Apply edits">
+      </div>
+      <div class="setting-row edit-add">
+        <select id="editShapeType" aria-label="Shape to add">
+          <option value="sphere">Sphere</option>
+          <option value="box">Box</option>
+          <option value="ellipsoid">Ellipsoid</option>
+          <option value="cylinder">Cylinder</option>
+          <option value="capsule">Capsule</option>
+          <option value="plane">Plane</option>
+          <option value="infinite_cone">Infinite cone</option>
+          <option value="all">All space</option>
+        </select>
+        <button id="editAddShape" class="secondary" type="button">Add</button>
+      </div>
+      <ul id="editShapeList"></ul>
+      <div id="editShape" hidden>
+        <div class="setting-row edit-modes">
+          <button type="button" class="secondary" data-mode="translate">Move</button>
+          <button type="button" class="secondary" data-mode="rotate">Rotate</button>
+          <button type="button" class="secondary" data-mode="scale">Scale</button>
+        </div>
+        <label class="setting" id="editRadiusRow"><span id="editRadiusLabel">Radius</span> <span class="setting-row"><input type="range" id="editRadius" min="0" max="1" step="0.001" data-minimum="0.01" data-maximum="100" data-default="1"></span></label>
+        <label class="setting" id="editSizeRow"><span id="editSizeLabel">Size</span> <span class="setting-row"><input type="number" class="edit-number" id="editSizeX" step="0.1" min="0.001" aria-label="Size X"><input type="number" class="edit-number" id="editSizeY" step="0.1" min="0.001" aria-label="Size Y"><input type="number" class="edit-number" id="editSizeZ" step="0.1" min="0.001" aria-label="Size Z"></span></label>
+        <label class="setting">Opacity <span class="setting-row"><input type="range" id="editOpacity" min="0" max="1" step="0.01" value="0"></span></label>
+        <label class="setting">Color <span class="setting-row"><input type="color" id="editColor" value="#ffffff"><input type="checkbox" id="editShapeInvert" aria-label="Invert this shape"><span>Invert</span></span></label>
+        <label class="setting">Displace <span class="setting-row"><input type="number" class="edit-number" id="editDisplaceX" step="0.1" value="0" aria-label="Displace X"><input type="number" class="edit-number" id="editDisplaceY" step="0.1" value="0" aria-label="Displace Y"><input type="number" class="edit-number" id="editDisplaceZ" step="0.1" value="0" aria-label="Displace Z"></span></label>
+      </div>
+      <label class="setting">Blend <span class="setting-row"><select id="editBlend"><option value="multiply">Multiply</option><option value="set_rgb">Set RGB</option><option value="add_rgba">Add RGBA</option></select></span></label>
+      <label class="setting">Soft edge <span class="setting-row"><input type="range" id="editSoftEdge" min="0" max="2" step="0.01" value="0"></span></label>
+      <label class="setting">Smooth <span class="setting-row"><input type="range" id="editSmooth" min="0" max="2" step="0.01" value="0"><input type="checkbox" id="editInvert" aria-label="Invert the whole edit"><span>Invert</span></span></label>
+    </div>
+    <p id="colmapStatus">No COLMAP model loaded. Pick a sparse folder, or drop a folder or the images.bin + points3D.bin pair.</p>
+    <div id="status">Loading SparkJS…</div>
+    <div id="lodStatus">LoD: no splat loaded.</div>
+  </section>
+  <p id="fps">FPS: –</p>
+  <p id="help">Drag: orbit &nbsp;·&nbsp; Wheel: zoom &nbsp;·&nbsp; Right drag: pan &nbsp;·&nbsp; Drop files on their own button</p>
+  <script src="colmap_model_loader.js"></script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+    import { SparkRenderer, SplatEdit, SplatEditRgbaBlendMode, SplatEditSdf, SplatEditSdfType, SplatFileType, SplatMesh } from '@sparkjsdev/spark';
+
+    const canvas = document.querySelector('#viewer');
+    const panel = document.querySelector('#panel');
+    const panelToggle = document.querySelector('#panelToggle');
+    const status = document.querySelector('#status');
+    const lodStatus = document.querySelector('#lodStatus');
+    const fileInput = document.querySelector('#file');
+    const colmapFolderInput = document.querySelector('#colmapFolder');
+    const splatLabel = document.querySelector('#splatLabel');
+    const colmapFolderLabel = document.querySelector('#colmapFolderLabel');
+    const colmapPointSizeInput = document.querySelector('#colmapPointSize');
+    const colmapCameraSizeInput = document.querySelector('#colmapCameraSize');
+    const colmapPointsVisibleInput = document.querySelector('#colmapPointsVisible');
+    const colmapCamerasVisibleInput = document.querySelector('#colmapCamerasVisible');
+    const colmapStatus = document.querySelector('#colmapStatus');
+    const { detectFormat, parsePositions, parsePoints } = window.ColmapModelLoader;
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x060914, 1);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.01, 100000);
+    camera.position.set(0, -2, 4);
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.minDistance = 0;
+    controls.maxDistance = Infinity;
+    controls.minPolarAngle = 0;
+    controls.maxPolarAngle = Math.PI;
+    const spark = new SparkRenderer({ renderer, lodSplatScale: 0.75 });
+    scene.add(spark);
+    let splats = null;
+    let colmapGroup = null;
+    let colmapPoints = null;
+    let colmapCameras = null;
+    const COLMAP_ROTATION_X = -Math.PI / 2; // matches the splat orientation
+    const cameraAxisDirections = [
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(0, 0, 1)
+    ];
+    const cameraAxisMaterials = [
+      new THREE.MeshBasicMaterial({ color: 0xff4d4d }),
+      new THREE.MeshBasicMaterial({ color: 0x50d890 }),
+      new THREE.MeshBasicMaterial({ color: 0x4f8cff })
+    ];
+    const gridBaseSize = 10;
+    const grid = new THREE.GridHelper(gridBaseSize, 64, 0xcbd5e1, 0x475569);
+    const axesLength = 1;
+    const axes = new THREE.AxesHelper(axesLength);
+    scene.add(grid, axes);
+    let loading = false;
+
+    function setStatus(message) { status.textContent = message; }
+
+    function resize() {
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+
+    const gridSizeInput = document.querySelector('#gridSize');
+    const gridVisibleInput = document.querySelector('#gridVisible');
+
+    function applyGridSize() {
+      const size = gridBaseSize * 10 ** Number(gridSizeInput.value);
+      grid.scale.setScalar(size / gridBaseSize);
+      gridSizeInput.setAttribute('aria-valuetext', size.toPrecision(3));
+    }
+
+    gridSizeInput.addEventListener('input', applyGridSize);
+    applyGridSize();
+    gridVisibleInput.addEventListener('change', () => { grid.visible = gridVisibleInput.checked; });
+
+    const cameraFovInput = document.querySelector('#cameraFov');
+
+    function applyCameraFov() {
+      const fov = Number(cameraFovInput.value);
+      cameraFovInput.setAttribute('aria-valuetext', `${fov}°`);
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
+
+    cameraFovInput.addEventListener('input', applyCameraFov);
+    applyCameraFov();
+
+    function setLogarithmicSliderValue(input, value) {
+      const minimum = Number(input.dataset.minimum);
+      const maximum = Number(input.dataset.maximum);
+      input.value = Math.log(value / minimum) / Math.log(maximum / minimum);
+      updateSliderValueText(input, value);
+    }
+
+    function initializeLogarithmicSlider(input) {
+      setLogarithmicSliderValue(input, Number(input.dataset.default));
+    }
+
+    function logarithmicSliderValue(input) {
+      const minimum = Number(input.dataset.minimum);
+      const maximum = Number(input.dataset.maximum);
+      return minimum * (maximum / minimum) ** Number(input.value);
+    }
+
+    function updateSliderValueText(input, value) {
+      input.setAttribute('aria-valuetext', value.toPrecision(3));
+    }
+
+    initializeLogarithmicSlider(colmapPointSizeInput);
+    initializeLogarithmicSlider(colmapCameraSizeInput);
+    colmapPointSizeInput.addEventListener('input', handleColmapPointSize);
+    colmapCameraSizeInput.addEventListener('input', handleColmapCameraSize);
+
+    function removeSplats() {
+      if (!splats) return;
+      scene.remove(splats);
+      splats.dispose();
+      splats = null;
+      setLodStatus('LoD: no splat loaded.');
+    }
+
+    function setLodStatus(message) {
+      if (lodStatus.textContent !== message) lodStatus.textContent = message;
+    }
+
+    // The LoD pyramid is built by the loader worker, so it exists as soon as the mesh is
+    // initialized, and it holds every splat: building one leaves the base packedSplats empty.
+    // SparkRenderer only picks splats out of the pyramid once the mesh has been rendered, and
+    // re-picks as the camera moves, so the selected count is read per frame.
+    function updateLodStatus() {
+      if (!splats) return;
+      if (!splats.isInitialized) {
+        setLodStatus('LoD: waiting for the splat file to load…');
+        return;
+      }
+      const lodSplats = splats.packedSplats.lodSplats;
+      if (!lodSplats) {
+        setLodStatus(`LoD: unavailable; drawing all ${splats.packedSplats.numSplats.toLocaleString()} splats.`);
+        return;
+      }
+      const selected = spark.lodInstances.get(splats);
+      if (!selected) {
+        setLodStatus('LoD: pyramid ready, waiting for the renderer to select splats…');
+        return;
+      }
+      const percent = (selected.numSplats / lodSplats.numSplats * 100).toFixed(1);
+      setLodStatus(`LoD: drawing ${selected.numSplats.toLocaleString()} of ${lodSplats.numSplats.toLocaleString()} splats (${percent}%).`);
+    }
+
+    async function loadFile(file) {
+      if (!file || loading) return;
+      const extension = file.name.split('.').pop().toLowerCase();
+      if (!['ply', 'splat', 'spz', 'ksplat', 'rad'].includes(extension)) {
+        setStatus('Choose a .ply, .splat, .spz, .ksplat, or .rad splat file.');
+        return;
+      }
+      loading = true;
+      removeSplats();
+      setStatus(`Loading ${file.name}…`);
+      try {
+        const options = {
+          fileBytes: await file.arrayBuffer(),
+          fileName: file.name,
+          lod: extension === 'rad' ? false : true,
+          onProgress: event => {
+            const progress = event.lengthComputable ? `${Math.round(event.loaded / event.total * 100)}%` : `${Math.round(event.loaded / 1024 / 1024)} MiB`;
+            setStatus(`Loading ${file.name}\n${progress}`);
+          }
+        };
+        if (extension === 'splat') options.fileType = SplatFileType.SPLAT;
+        if (extension === 'ksplat') options.fileType = SplatFileType.KSPLAT;
+        splats = new SplatMesh(options);
+        splats.rotation.x = -Math.PI / 2;
+        scene.add(splats);
+        await splats.initialized;
+        setStatus(`${file.name}\nLoaded.`);
+      } catch (error) {
+        removeSplats();
+        setStatus(`Unable to load ${file.name}: ${error.message}`);
+        console.error(error);
+      } finally {
+        loading = false;
+        fileInput.value = '';
+      }
+    }
+
+    // A SplatEdit carves, tints, or displaces splats inside the SDF shapes it holds. Spark
+    // blends the shapes with a softmax, so their order does not matter. The edit sits in the
+    // scene rather than under the mesh: shapes are then placed in world space, and they
+    // survive loading another file.
+    const editEnabledInput = document.querySelector('#editEnabled');
+    const editShapeTypeInput = document.querySelector('#editShapeType');
+    const editAddShapeButton = document.querySelector('#editAddShape');
+    const editShapeList = document.querySelector('#editShapeList');
+    const editShapePanel = document.querySelector('#editShape');
+    const editRadiusRow = document.querySelector('#editRadiusRow');
+    const editRadiusLabel = document.querySelector('#editRadiusLabel');
+    const editRadiusInput = document.querySelector('#editRadius');
+    const editSizeRow = document.querySelector('#editSizeRow');
+    const editSizeLabel = document.querySelector('#editSizeLabel');
+    const editSizeInputs = { x: document.querySelector('#editSizeX'), y: document.querySelector('#editSizeY'), z: document.querySelector('#editSizeZ') };
+    const editOpacityInput = document.querySelector('#editOpacity');
+    const editColorInput = document.querySelector('#editColor');
+    const editShapeInvertInput = document.querySelector('#editShapeInvert');
+    const editDisplaceInputs = { x: document.querySelector('#editDisplaceX'), y: document.querySelector('#editDisplaceY'), z: document.querySelector('#editDisplaceZ') };
+    const editBlendInput = document.querySelector('#editBlend');
+    const editSoftEdgeInput = document.querySelector('#editSoftEdge');
+    const editSmoothInput = document.querySelector('#editSmooth');
+    const editInvertInput = document.querySelector('#editInvert');
+
+    const splatEdit = new SplatEdit({ rgbaBlendMode: SplatEditRgbaBlendMode.MULTIPLY });
+    splatEdit.visible = false;
+    scene.add(splatEdit);
+    const editPreviews = new THREE.Group();
+    scene.add(editPreviews);
+    const previewMaterial = new THREE.MeshBasicMaterial({ color: 0x4f8cff, wireframe: true, transparent: true, opacity: 0.4, depthWrite: false });
+    const selectedPreviewMaterial = new THREE.MeshBasicMaterial({ color: 0x93c5fd, wireframe: true, transparent: true, opacity: 0.85, depthWrite: false });
+    const gizmo = new TransformControls(camera, canvas);
+    gizmo.addEventListener('dragging-changed', event => { controls.enabled = !event.value; });
+    gizmo.addEventListener('objectChange', syncShapeInputs);
+    scene.add(gizmo.getHelper());
+    const shapes = [];
+    let selectedShape = null;
+
+    const shapeNames = {
+      sphere: 'Sphere', box: 'Box', ellipsoid: 'Ellipsoid', cylinder: 'Cylinder',
+      capsule: 'Capsule', plane: 'Plane', infinite_cone: 'Infinite cone', all: 'All space'
+    };
+    // Which size fields each SDF type reads, and what its radius means there.
+    const shapeControls = {
+      sphere: { radius: 'Radius' },
+      box: { radius: 'Rounding', size: 'Half size', axes: 'xyz' },
+      ellipsoid: { size: 'Radii', axes: 'xyz' },
+      cylinder: { radius: 'Radius', size: 'Half height', axes: 'y' },
+      capsule: { radius: 'Radius', size: 'Length', axes: 'y' },
+      plane: {},
+      infinite_cone: { radius: 'Angle ×45°' },
+      all: {}
+    };
+    const previewSpan = 4; // Plane and infinite cone are unbounded; their outline is a stand-in.
+
+    function previewGeometry(type) {
+      switch (type) {
+        case SplatEditSdfType.SPHERE:
+        case SplatEditSdfType.ELLIPSOID: return new THREE.SphereGeometry(1, 24, 16);
+        case SplatEditSdfType.BOX: return new THREE.BoxGeometry(2, 2, 2);
+        case SplatEditSdfType.CYLINDER: return new THREE.CylinderGeometry(1, 1, 2, 24, 1, true);
+        case SplatEditSdfType.CAPSULE: return new THREE.CapsuleGeometry(1, 1, 6, 16);
+        case SplatEditSdfType.PLANE: return new THREE.PlaneGeometry(previewSpan, previewSpan);
+        case SplatEditSdfType.INFINITE_CONE: return new THREE.ConeGeometry(1, 1, 24, 1, true).translate(0, -0.5, 0).rotateX(Math.PI / 2);
+        default: return null; // ALL covers everything, so there is no outline to draw.
+      }
+    }
+
+    // The capsule is the one shape whose radius and length cannot both come from a scale,
+    // since scaling non-uniformly would deform its caps.
+    function resizeCapsulePreview(shape) {
+      const radius = shape.sdf.radius;
+      const length = shape.sdf.scale.y;
+      if (shape.preview.userData.radius === radius && shape.preview.userData.length === length) return;
+      shape.preview.geometry.dispose();
+      shape.preview.geometry = new THREE.CapsuleGeometry(radius, length, 6, 16);
+      shape.preview.userData = { radius, length };
+    }
+
+    function updateShapePreview(shape) {
+      const { sdf, preview } = shape;
+      if (!preview) return;
+      preview.position.copy(sdf.position);
+      preview.quaternion.copy(sdf.quaternion);
+      switch (sdf.type) {
+        case SplatEditSdfType.SPHERE: preview.scale.setScalar(sdf.radius); break;
+        case SplatEditSdfType.BOX:
+        case SplatEditSdfType.ELLIPSOID: preview.scale.copy(sdf.scale); break;
+        case SplatEditSdfType.CYLINDER: preview.scale.set(sdf.radius, sdf.scale.y, sdf.radius); break;
+        case SplatEditSdfType.CAPSULE: resizeCapsulePreview(shape); preview.scale.setScalar(1); break;
+        case SplatEditSdfType.INFINITE_CONE: {
+          const spread = previewSpan * Math.tan(Math.PI / 4 * Math.min(sdf.radius, 1.9));
+          preview.scale.set(spread, spread, previewSpan);
+          break;
+        }
+        default: preview.scale.setScalar(1);
+      }
+    }
+
+    function updateShapePreviews() {
+      for (const shape of shapes) updateShapePreview(shape);
+    }
+
+    function addShape(type) {
+      const sdf = new SplatEditSdf({ type, radius: 1, opacity: 0 });
+      sdf.position.copy(controls.target);
+      splatEdit.add(sdf);
+      const geometry = previewGeometry(type);
+      const preview = geometry ? new THREE.Mesh(geometry, previewMaterial) : null;
+      if (preview) editPreviews.add(preview);
+      const shape = { sdf, preview };
+      shapes.push(shape);
+      selectShape(shape);
+    }
+
+    function removeShape(shape) {
+      splatEdit.remove(shape.sdf);
+      if (shape.preview) {
+        shape.preview.geometry.dispose();
+        editPreviews.remove(shape.preview);
+      }
+      shapes.splice(shapes.indexOf(shape), 1);
+      selectShape(shapes[shapes.length - 1] ?? null);
+    }
+
+    function selectShape(shape) {
+      selectedShape = shape;
+      for (const other of shapes) {
+        if (other.preview) other.preview.material = other === shape ? selectedPreviewMaterial : previewMaterial;
+      }
+      if (shape) gizmo.attach(shape.sdf);
+      else gizmo.detach();
+      editShapePanel.hidden = !shape;
+      syncShapeInputs();
+      renderShapeList();
+    }
+
+    function renderShapeList() {
+      editShapeList.replaceChildren(...shapes.map((shape, index) => {
+        const row = document.createElement('li');
+        if (shape === selectedShape) row.classList.add('selected');
+        const applied = document.createElement('input');
+        applied.type = 'checkbox';
+        applied.checked = shape.sdf.visible;
+        applied.setAttribute('aria-label', 'Apply this shape');
+        applied.addEventListener('change', () => {
+          shape.sdf.visible = applied.checked;
+          if (shape.preview) shape.preview.visible = applied.checked;
+        });
+        const name = document.createElement('button');
+        name.type = 'button';
+        name.className = 'shape-name';
+        name.textContent = `${index + 1}. ${shapeNames[shape.sdf.type]}`;
+        name.addEventListener('click', () => selectShape(shape));
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'shape-remove';
+        remove.textContent = '✕';
+        remove.setAttribute('aria-label', 'Remove this shape');
+        remove.addEventListener('click', () => removeShape(shape));
+        row.append(applied, name, remove);
+        return row;
+      }));
+      // An edit carrying no shape but Invert would erase every splat, so keep it off.
+      splatEdit.visible = editEnabledInput.checked && shapes.length > 0;
+    }
+
+    function syncShapeInputs() {
+      if (!selectedShape) return;
+      const { sdf } = selectedShape;
+      const fields = shapeControls[sdf.type];
+      editRadiusRow.hidden = !fields.radius;
+      editRadiusLabel.textContent = fields.radius ?? 'Radius';
+      setLogarithmicSliderValue(editRadiusInput, Math.min(Math.max(sdf.radius, 0.01), 100));
+      editSizeRow.hidden = !fields.size;
+      editSizeLabel.textContent = fields.size ?? 'Size';
+      for (const [axis, input] of Object.entries(editSizeInputs)) {
+        input.hidden = !(fields.axes ?? '').includes(axis);
+        input.value = Number(sdf.scale[axis].toFixed(3));
+      }
+      editOpacityInput.value = sdf.opacity;
+      updateSliderValueText(editOpacityInput, sdf.opacity);
+      editColorInput.value = `#${sdf.color.getHexString()}`;
+      editShapeInvertInput.checked = sdf.invert;
+      for (const [axis, input] of Object.entries(editDisplaceInputs)) {
+        input.value = Number(sdf.displace[axis].toFixed(3));
+      }
+    }
+
+    editAddShapeButton.addEventListener('click', () => addShape(editShapeTypeInput.value));
+    editEnabledInput.addEventListener('change', renderShapeList);
+
+    for (const button of document.querySelectorAll('.edit-modes button')) {
+      button.addEventListener('click', () => {
+        gizmo.setMode(button.dataset.mode);
+        for (const other of document.querySelectorAll('.edit-modes button')) {
+          other.classList.toggle('active', other === button);
+        }
+      });
+    }
+    document.querySelector('.edit-modes button').classList.add('active');
+
+    editRadiusInput.addEventListener('input', () => {
+      if (!selectedShape) return;
+      const radius = logarithmicSliderValue(editRadiusInput);
+      updateSliderValueText(editRadiusInput, radius);
+      selectedShape.sdf.radius = radius;
+    });
+    for (const [axis, input] of Object.entries(editSizeInputs)) {
+      input.addEventListener('input', () => {
+        const size = Number(input.value);
+        if (selectedShape && Number.isFinite(size) && size > 0) selectedShape.sdf.scale[axis] = size;
+      });
+    }
+    editOpacityInput.addEventListener('input', () => {
+      if (!selectedShape) return;
+      const opacity = Number(editOpacityInput.value);
+      updateSliderValueText(editOpacityInput, opacity);
+      selectedShape.sdf.opacity = opacity;
+    });
+    editColorInput.addEventListener('input', () => {
+      if (selectedShape) selectedShape.sdf.color.set(editColorInput.value);
+    });
+    editShapeInvertInput.addEventListener('change', () => {
+      if (selectedShape) selectedShape.sdf.invert = editShapeInvertInput.checked;
+    });
+    for (const [axis, input] of Object.entries(editDisplaceInputs)) {
+      input.addEventListener('input', () => {
+        const displace = Number(input.value);
+        if (selectedShape && Number.isFinite(displace)) selectedShape.sdf.displace[axis] = displace;
+      });
+    }
+
+    editBlendInput.addEventListener('change', () => { splatEdit.rgbaBlendMode = editBlendInput.value; });
+    editSoftEdgeInput.addEventListener('input', () => {
+      splatEdit.softEdge = Number(editSoftEdgeInput.value);
+      updateSliderValueText(editSoftEdgeInput, splatEdit.softEdge);
+    });
+    editSmoothInput.addEventListener('input', () => {
+      splatEdit.sdfSmooth = Number(editSmoothInput.value);
+      updateSliderValueText(editSmoothInput, splatEdit.sdfSmooth);
+    });
+    editInvertInput.addEventListener('change', () => { splatEdit.invert = editInvertInput.checked; });
+    initializeLogarithmicSlider(editRadiusInput);
+
+    function disposeColmapGroup() {
+      if (!colmapGroup) return;
+      colmapGroup.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+      });
+      scene.remove(colmapGroup);
+      colmapGroup = null;
+      colmapPoints = null;
+      colmapCameras = null;
+    }
+
+    function createCameraAxisGeometry(size) {
+      const radius = Math.max(size * 0.05, 0.004);
+      return new THREE.CylinderGeometry(radius, radius, size, 6);
+    }
+
+    function createCameraAxes(size, axisGeometry) {
+      const cameraAxes = new THREE.Group();
+      cameraAxisDirections.forEach((direction, index) => {
+        const axis = new THREE.Mesh(axisGeometry, cameraAxisMaterials[index]);
+        axis.position.copy(direction).multiplyScalar(size / 2);
+        axis.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        cameraAxes.add(axis);
+      });
+      return cameraAxes;
+    }
+
+    function buildColmapGroup(images, pointData) {
+      const center = new THREE.Vector3();
+      images.forEach(image => center.add(new THREE.Vector3(...image.position)));
+      if (images.length > 0) center.divideScalar(images.length);
+
+      const offsetPoint = point => new THREE.Vector3(point[0] - center.x, point[1] - center.y, point[2] - center.z);
+      const points = pointData.points.map(offsetPoint);
+
+      const group = new THREE.Group();
+
+      const pointGeometry = new THREE.BufferGeometry();
+      pointGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(points.flatMap(point => point.toArray())), 3));
+      pointGeometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(pointData.colors.flat()), 3));
+      colmapPoints = new THREE.Points(pointGeometry, new THREE.PointsMaterial({
+        vertexColors: true,
+        size: logarithmicSliderValue(colmapPointSizeInput)
+      }));
+      colmapPoints.visible = colmapPointsVisibleInput.checked;
+      group.add(colmapPoints);
+
+      const cameraSize = logarithmicSliderValue(colmapCameraSizeInput);
+      const axisGeometry = createCameraAxisGeometry(cameraSize);
+      colmapCameras = new THREE.Group();
+      images.forEach(image => {
+        const cameraAxes = createCameraAxes(cameraSize, axisGeometry);
+        cameraAxes.position.copy(offsetPoint(image.position));
+        cameraAxes.setRotationFromMatrix(new THREE.Matrix4().fromArray(image.rotationMatrix));
+        colmapCameras.add(cameraAxes);
+      });
+      colmapCameras.visible = colmapCamerasVisibleInput.checked;
+      group.add(colmapCameras);
+
+      group.rotation.x = COLMAP_ROTATION_X;
+      return group;
+    }
+
+    function handleColmapPointSize() {
+      const size = logarithmicSliderValue(colmapPointSizeInput);
+      updateSliderValueText(colmapPointSizeInput, size);
+      if (colmapPoints) colmapPoints.material.size = size;
+    }
+
+    function handleColmapCameraSize() {
+      const size = logarithmicSliderValue(colmapCameraSizeInput);
+      updateSliderValueText(colmapCameraSizeInput, size);
+      if (!colmapCameras) return;
+
+      const axisGeometry = createCameraAxisGeometry(size);
+      const newCameras = new THREE.Group();
+      colmapCameras.children.forEach(child => {
+        const cameraAxes = createCameraAxes(size, axisGeometry);
+        cameraAxes.position.copy(child.position);
+        cameraAxes.quaternion.copy(child.quaternion);
+        newCameras.add(cameraAxes);
+      });
+
+      const oldAxisGeometry = colmapCameras.children[0]?.children[0]?.geometry;
+      colmapGroup.remove(colmapCameras);
+      if (oldAxisGeometry) oldAxisGeometry.dispose();
+      newCameras.visible = colmapCamerasVisibleInput.checked;
+      colmapCameras = newCameras;
+      colmapGroup.add(newCameras);
+    }
+
+    async function loadColmapModel(files) {
+      const fileMap = new Map(files.map(file => [file.name, file]));
+      const format = detectFormat(fileMap.keys());
+      if (format == null) {
+        colmapStatus.textContent = 'Need both images.bin and points3D.bin, or both images.txt and points3D.txt.';
+        return;
+      }
+      colmapStatus.textContent = 'Loading COLMAP model…';
+      try {
+        const [images, pointData] = await Promise.all([
+          parsePositions(fileMap.get(`images.${format}`), format),
+          parsePoints(fileMap.get(`points3D.${format}`), format)
+        ]);
+        disposeColmapGroup();
+        colmapGroup = buildColmapGroup(images, pointData);
+        scene.add(colmapGroup);
+        colmapStatus.textContent = `COLMAP ${format === 'bin' ? 'binary' : 'text'} model: ${images.length} cameras, ${pointData.points.length} points.`;
+      } catch (error) {
+        console.error(error);
+        colmapStatus.textContent = `Unable to read COLMAP model: ${error.message}`;
+      } finally {
+        colmapFolderInput.value = '';
+      }
+    }
+
+    function isSplatFile(file) {
+      return ['ply', 'splat', 'spz', 'ksplat', 'rad'].includes(file.name.split('.').pop().toLowerCase());
+    }
+
+    colmapFolderInput.addEventListener('change', event => loadColmapModel(Array.from(event.target.files)));
+    colmapPointsVisibleInput.addEventListener('change', () => {
+      if (colmapPoints) colmapPoints.visible = colmapPointsVisibleInput.checked;
+    });
+    colmapCamerasVisibleInput.addEventListener('change', () => {
+      if (colmapCameras) colmapCameras.visible = colmapCamerasVisibleInput.checked;
+    });
+
+    fileInput.addEventListener('change', event => loadFile(event.target.files[0]));
+
+    async function readDroppedFiles(dataTransfer) {
+      const entries = Array.from(dataTransfer.items || [])
+        .map(item => item.webkitGetAsEntry && item.webkitGetAsEntry())
+        .filter(Boolean);
+      if (entries.length === 0) return Array.from(dataTransfer.files);
+      const files = await Promise.all(entries.map(readEntryFiles));
+      return files.flat();
+    }
+
+    async function readEntryFiles(entry) {
+      if (entry.isFile) {
+        return new Promise((resolve, reject) => entry.file(file => resolve([file]), reject));
+      }
+      const reader = entry.createReader();
+      const entries = [];
+      let batch;
+      do {
+        batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+        entries.push(...batch);
+      } while (batch.length > 0);
+      const files = await Promise.all(entries.map(readEntryFiles));
+      return files.flat();
+    }
+
+    // Each button is its own drop target, so a drop always says what it loads. A dropped
+    // folder is read recursively, which is how a COLMAP sparse folder arrives.
+    function makeDropTarget(label, handleFiles) {
+      label.addEventListener('dragenter', event => { event.preventDefault(); label.classList.add('drop-active'); });
+      label.addEventListener('dragover', event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; });
+      label.addEventListener('dragleave', () => label.classList.remove('drop-active'));
+      label.addEventListener('drop', async event => {
+        event.preventDefault();
+        label.classList.remove('drop-active');
+        handleFiles(await readDroppedFiles(event.dataTransfer));
+      });
+    }
+
+    makeDropTarget(splatLabel, files => {
+      const splat = files.find(isSplatFile);
+      if (splat) loadFile(splat);
+      else setStatus('No splat file (.ply, .splat, .spz, .ksplat, .rad) in that drop.');
+    });
+    makeDropTarget(colmapFolderLabel, loadColmapModel);
+
+    panelToggle.addEventListener('click', () => {
+      const collapsed = panel.classList.toggle('collapsed');
+      panelToggle.textContent = collapsed ? '☰' : '✕';
+      panelToggle.title = collapsed ? 'Show panel' : 'Hide panel';
+      panelToggle.setAttribute('aria-label', panelToggle.title);
+    });
+
+    addEventListener('resize', resize);
+    resize();
+    setStatus('Ready. Open a splat file or a COLMAP folder, or drop files onto their buttons.');
+    const fpsDisplay = document.querySelector('#fps');
+    let fpsFrames = 0;
+    let fpsWindowStart = performance.now();
+    renderer.setAnimationLoop(() => {
+      controls.update();
+      updateShapePreviews();
+      renderer.render(scene, camera);
+      updateLodStatus();
+      fpsFrames += 1;
+      const now = performance.now();
+      const elapsed = now - fpsWindowStart;
+      if (elapsed >= 500) {
+        fpsDisplay.textContent = `FPS: ${Math.round(fpsFrames / elapsed * 1000)}`;
+        fpsFrames = 0;
+        fpsWindowStart = now;
+      }
+    });
+  </script>
+</body>
+</html>
